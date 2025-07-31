@@ -1,13 +1,15 @@
 import oemof.solph as solph
 import pandas as pd
 import pyomo.environ as pyo
+
 from eco_funcs import bew_op_bonus, calc_bwsf, chp_bonus
 from helpers import calc_bew_el_cost_prim
 
 
-def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
+def IIIgdh_network_invest(data, param, use_hp=True, return_unsolved=False):
     """
-    Generate and solve mixed integer linear problem of the primary network.
+    Generate and solve mixed integer linear problem of the 4. generation
+    district heating network.
 
     Parameters
     ----------
@@ -53,7 +55,7 @@ def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
         gnw, enw, hnw, ccet_node, ccet_no_bonus_node, spotmarket_node
         )
 
-    # %% Sources
+    # %% MARK: Sources
     gas_source = solph.components.Source(
         label='gas source',
         outputs={
@@ -65,49 +67,34 @@ def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
         )
 
     # BEW operational bonus
-    try:
-        if param['param']['use_BEW_op_bonus']:
-            bew_op_bonus_Q_in_grid, bew_op_bonus_Q_in_self = calc_bew_el_cost_prim(
-                data, param
-                )
-            hp_P_max = (data['hp_Q_max'] - data['hp_c_0']) / data['hp_c_1']
-
-            elec_source_cost = (
-                param['param']['elec_consumer_charges_grid']
-                - param['param']['elec_consumer_charges_self']
-                + data['el_spot_price']
-                + (data['hp_Q_max'] / hp_P_max) * (
-                    - bew_op_bonus_Q_in_grid
-                    + bew_op_bonus_Q_in_self
-                    )
-                )
-        else:
-            bew_op_bonus_Q_in_self = 0
-            elec_source_cost = (
-                param['param']['elec_consumer_charges_grid']
-                - param['param']['elec_consumer_charges_self']
-                + data['el_spot_price']
-                )
-    except KeyError as e:
-        print(f'KeyError Exception: {e}')
-        elec_source_cost = (
-            param['param']['elec_consumer_charges_grid']
-            - param['param']['elec_consumer_charges_self']
-            + data['el_spot_price']
+    if param['param']['use_BEW_op_bonus']:
+        bew_op_bonus_Q_in_grid, bew_op_bonus_Q_in_self = calc_bew_el_cost_prim(
+            data, param
             )
+    else:
+        bew_op_bonus_Q_in_grid = 0
+        bew_op_bonus_Q_in_self = 0
+
+    hp_P_max = (data['hp_Q_max'] - data['hp_c_0']) / data['hp_c_1']
 
     elec_source = solph.components.Source(
         label='electricity source',
         outputs={
             enw: solph.flows.Flow(
-                variable_costs=elec_source_cost
-                )
-            }
+                variable_costs=(
+                    param['param']['elec_consumer_charges_grid']
+                    - param['param']['elec_consumer_charges_self']
+                    + data['el_spot_price']
+                    + (data['hp_Q_max'] / hp_P_max) * (
+                        - bew_op_bonus_Q_in_grid
+                        + bew_op_bonus_Q_in_self
+                        )
+                    ))}
         )
 
     energy_system.add(gas_source, elec_source)
 
-    # %% Sinks
+    # %% MARK: Sinks
     elec_sink = solph.components.Sink(
         label='spotmarket',
         inputs={
@@ -129,46 +116,45 @@ def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
 
     energy_system.add(elec_sink, heat_sink)
 
-    # %% Heat pump
-    if use_hp:
-        for i in range(1, param['hp']['amount']+1):
-            hp = solph.components.OffsetConverter(
-                label=f'heat pump {i}',
-                inputs={
-                    enw: solph.flows.Flow(
-                        variable_costs=param['param']['elec_consumer_charges_self'],
+    # %% MARK: HP
+    for i in range(1, param['hp']['amount']+1):
+        hp = solph.components.OffsetConverter(
+            label=f'heat pump {i}',
+            inputs={
+                enw: solph.flows.Flow(
+                    variable_costs=param['param']['elec_consumer_charges_self'],
+                )
+            },
+            outputs={
+                hnw: solph.flows.Flow(
+                    variable_costs=(
+                        param['hp']['op_cost_var'] - bew_op_bonus_Q_in_self
+                        ),
+                    nominal_capacity=solph.Investment(
+                        ep_costs=(
+                            param['hp']['inv_spez_m'] / bwsf
+                            * (1 - param['param']['BEW'])
+                            + param['hp']['op_cost_fix']
+                            ),
+                        maximum=param['hp']['cap_max'],
+                        minimum=param['hp']['cap_min'],
+                        offset=(
+                            param['hp']['inv_spez_b'] / bwsf
+                            * (1 - param['param']['BEW'])
+                            ),
+                        nonconvex=solph.NonConvex()
+                        ),
+                    max=data['hp_Q_max'],
+                    min=data['hp_Q_min'],
+                    nonconvex=solph.NonConvex()
                     )
                 },
-                outputs={
-                    hnw: solph.flows.Flow(
-                        variable_costs=(
-                            param['hp']['op_cost_var'] - bew_op_bonus_Q_in_self
-                            ),
-                        nominal_capacity=solph.Investment(
-                            ep_costs=(
-                                param['hp']['inv_spez_m'] / bwsf
-                                * (1 - param['param']['BEW'])
-                                + param['hp']['op_cost_fix']
-                                ),
-                            maximum=param['hp']['cap_max'],
-                            minimum=param['hp']['cap_min'],
-                            offset=(
-                                param['hp']['inv_spez_b'] / bwsf
-                                * (1 - param['param']['BEW'])
-                                ),
-                            nonconvex=solph.NonConvex()
-                            ),
-                        max=data['hp_Q_max'],
-                        min=data['hp_Q_min'],
-                        nonconvex=solph.NonConvex()
-                        )
-                    },
-                coefficients=[data['hp_c_0'], data['hp_c_1']]
-                )
+            coefficients=[data['hp_c_0'], data['hp_c_1']]
+            )
 
-            energy_system.add(hp)
+        energy_system.add(hp)
 
-    # %% Combined cycle extraction turbine
+    # %% MARK: CCET
     ccet = solph.components.Converter(
         label='ccet',
         inputs={
@@ -202,7 +188,7 @@ def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
 
     energy_system.add(ccet)
 
-    # %% Peak load boiler
+    # %% MARK: PLB
     plb = solph.components.Converter(
         label='peak load boiler',
         inputs={gnw: solph.flows.Flow()},
@@ -229,7 +215,7 @@ def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
 
     energy_system.add(plb)
 
-    # %% Short term storage
+    # %% MARK: ST-TES
     st_tes = solph.components.GenericStorage(
         label='st-tes',
         nominal_capacity=solph.Investment(
@@ -261,7 +247,7 @@ def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
 
     energy_system.add(st_tes)
 
-    # %% Auxillary components
+    # %% MARK: Auxillary
     ccet_chp_bonus = param['param']['chp_bonus']
     ccet_with_chp_bonus = solph.components.Converter(
         label='ccet with chp bonus',
@@ -280,8 +266,8 @@ def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
 
     ccet_no_chp_bonus = solph.components.Converter(
         label='ccet no chp bonus',
-        inputs={ccet_node: solph.Flow()},
-        outputs={ccet_no_bonus_node: solph.Flow(
+        inputs={ccet_node: solph.flows.Flow()},
+        outputs={ccet_no_bonus_node: solph.flows.Flow(
             nominal_capacity=9999,
             max=1.0,
             min=0.0
@@ -291,8 +277,8 @@ def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
 
     ccet_no_chp_bonus_int = solph.components.Converter(
         label='ccet no chp bonus internally',
-        inputs={ccet_no_bonus_node: solph.Flow()},
-        outputs={enw: solph.Flow(
+        inputs={ccet_no_bonus_node: solph.flows.Flow()},
+        outputs={enw: solph.flows.Flow(
             nominal_capacity=9999,
             max=1.0,
             min=0.0
@@ -302,8 +288,8 @@ def primary_network_invest(data, param, use_hp=True, return_unsolved=False):
 
     ccet_no_chp_bonus_ext = solph.components.Converter(
         label='ccet no chp bonus externally',
-        inputs={ccet_no_bonus_node: solph.Flow()},
-        outputs={spotmarket_node: solph.Flow(
+        inputs={ccet_no_bonus_node: solph.flows.Flow()},
+        outputs={spotmarket_node: solph.flows.Flow(
             nominal_capacity=9999,
             max=1.0,
             min=0.0
@@ -413,7 +399,7 @@ def IVgdh_network_invest(data, param):
         bnw, enw, hnw, ice_node, ice_no_bonus_node, spotmarket_node, sol_node
         )
 
-    # %% Sources
+    # %% MARK: Sources
     biogas_source = solph.components.Source(
         label='biogas source',
         outputs={
@@ -494,7 +480,7 @@ def IVgdh_network_invest(data, param):
 
     energy_system.add(solar_thermal)
 
-    # %% Sinks
+    # %% MARK: Sinks
     elec_sink = solph.components.Sink(
         label='spotmarket',
         inputs={
@@ -516,7 +502,7 @@ def IVgdh_network_invest(data, param):
 
     energy_system.add(elec_sink, heat_sink)
 
-    # %% Heat pump
+    # %% MARK: HP
     for i in range(1, param['hp']['amount']+1):
         # Heat pump component
         hp = solph.components.OffsetConverter(
@@ -525,7 +511,8 @@ def IVgdh_network_invest(data, param):
                 enw: solph.flows.Flow(
                     variable_costs=(
                         param['param']['elec_consumer_charges_self'])
-                    )},
+                    )
+                },
             outputs={
                 hnw: solph.flows.Flow(
                     variable_costs=(
@@ -555,7 +542,7 @@ def IVgdh_network_invest(data, param):
 
         energy_system.add(hp)
 
-    # %% Internal extraction engine
+    # %% MARK: ICE
     ice = solph.components.Converter(
         label='ice',
         inputs={
@@ -590,7 +577,7 @@ def IVgdh_network_invest(data, param):
 
     energy_system.add(ice)
 
-    # %% Storage
+    # %% MARK: S-TES
     s_tes = solph.components.GenericStorage(
         label='s-tes',
         nominal_capacity=solph.Investment(
@@ -623,7 +610,7 @@ def IVgdh_network_invest(data, param):
 
     energy_system.add(s_tes)
 
-    # %% Auxillary components
+    # %% MARK: Auxillary
     ice_chp_bonus = param['param']['chp_bonus']
     ice_with_chp_bonus = solph.components.Converter(
         label='ice with chp bonus',
@@ -653,8 +640,8 @@ def IVgdh_network_invest(data, param):
 
     ice_no_chp_bonus_int = solph.components.Converter(
         label='ice no chp bonus internally',
-        inputs={ice_no_bonus_node: solph.Flow()},
-        outputs={enw: solph.Flow(
+        inputs={ice_no_bonus_node: solph.flows.Flow()},
+        outputs={enw: solph.flows.Flow(
             nominal_capacity=9999,
             max=1.0,
             min=0.0
@@ -664,8 +651,8 @@ def IVgdh_network_invest(data, param):
 
     ice_no_chp_bonus_ext = solph.components.Converter(
         label='ice no chp bonus externally',
-        inputs={ice_no_bonus_node: solph.Flow()},
-        outputs={spotmarket_node: solph.Flow(
+        inputs={ice_no_bonus_node: solph.flows.Flow()},
+        outputs={spotmarket_node: solph.flows.Flow(
             nominal_capacity=9999,
             max=1.0,
             min=0.0

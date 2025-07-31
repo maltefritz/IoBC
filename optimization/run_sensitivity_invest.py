@@ -3,15 +3,15 @@ import os
 from time import time
 
 import pandas as pd
-import postprocessing_invest
 
-import optimization.energy_system_invest as energy_system_invest
+import energy_system_invest
+import postprocessing_invest
 
 # %% Simulation parameters
 overwrite = True
 only_high_gaps = False
 
-energy_systems = ['IVgdh'] # ['pn']
+energy_systems = ['IVgdh'] # ['IIIgdh']
 scenarios = ['19']
 
 # Heat Pumps
@@ -25,22 +25,22 @@ el_prices = [*range(80, 140, 20)]
 
 # %% simulation and postprocessing functions
 es_funcs = {
-    'pn': energy_system_invest.primary_network_invest,
+    'IIIgdh': energy_system_invest.IIIgdh_network_invest,
     'IVgdh': energy_system_invest.IVgdh_network_invest
     }
 
 pp_funcs = {
-    'pn': postprocessing_invest.primary_network_invest,
+    'IIIgdh': postprocessing_invest.IIIgdh_network_invest,
     'IVgdh': postprocessing_invest.IVgdh_network_invest
     }
 
 # Readability help
 longnames = {
-    'pn': 'primary_network', 'IVgdh': 'IVgdh_network'
+    'IIIgdh': 'IIIgdh_network', 'IVgdh': 'IVgdh_network'
     }
 
 for es in energy_systems:
-    if es == 'pn':
+    if es == 'IIIgdh':
         gp_var = 'gas_price'
     elif es == 'IVgdh':
         gp_var = 'biogas_price'
@@ -155,7 +155,7 @@ for es in energy_systems:
                                 if sol_gap < param['param']['mipgap']:
                                     continue
                     args = [data, param]
-                    if es == 'pn':
+                    if es == 'IIIgdh':
                         use_hp = True
                         if hp == 'woHeatPump':
                             use_hp = False
@@ -168,7 +168,7 @@ for es in energy_systems:
                     time_end = time()
 
                     args = [results, meta_results, data, param]
-                    if es == 'pn':
+                    if es == 'IIIgdh':
                         args.append(use_hp)
                     data_all, data_caps, key_params, cost_df = pp_funcs[es](*args)
 

@@ -1,17 +1,15 @@
-# -*- coding: utf-8 -*-
-
 import numpy as np
 import pandas as pd
+from oemof.solph import views
+
 from eco_funcs import (LCOH, bew_op_bonus, calc_bwsf, chp_bonus, emission_calc,
                        invest_stes, npv)
 from helpers import calc_bew_el_cost_prim, calc_bew_el_cost_sub
-from oemof.solph import views
 
 
-def primary_network_invest(results, meta_results, data, param, use_hp):
+def IIIgdh_network_invest(results, meta_results, data, param, use_hp):
     """
-    Data postprocessing for the invest model of the primary district heating
-    network.
+    Data postprocessing for the 3th gen district heating network.
 
     Parameters
     ----------
@@ -46,8 +44,6 @@ def primary_network_invest(results, meta_results, data, param, use_hp):
     data_hnw_caps = views.node(results, 'heat network')['scalars']
     data_st_tes_caps = views.node(results, 'st-tes')['scalars']
 
-    # breakpoint()
-
     # Combine all data and relabel the column names
     data_all = pd.concat(
         [data_gnw, data_enw, data_hnw, data_ccet_node, data_ccet_no_bonus_node,
@@ -59,7 +55,7 @@ def primary_network_invest(results, meta_results, data, param, use_hp):
 
     data_caps = pd.concat([data_hnw_caps, data_st_tes_caps], axis=0)
     result_labeling(data_caps)
-    # breakpoint()
+
     # %% Deletion of unwated data
     drop_list = [
         'enw_to_spotmarket_node', 'P_ccet_no_bonus_node',
@@ -69,8 +65,6 @@ def primary_network_invest(results, meta_results, data, param, use_hp):
     for col in data_all.columns:
         if ('status' in col[-1]) or ('state' in col) or (col in drop_list):
             data_all.drop(columns=col, inplace=True)
-
-    # breakpoint()
 
     data_caps = data_caps.to_frame().transpose()
     data_caps.reset_index(inplace=True, drop=True)
