@@ -1,10 +1,3 @@
-"""Functions for calculation of economical and ecological parameters.
-
-Created on Mon Feb  1 11:43:39 2021
-
-@author: Jonas Freißmann
-"""
-
 import numpy as np
 import pandas as pd
 
