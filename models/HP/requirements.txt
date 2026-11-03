@@ -1,0 +1,9 @@
+# Tested with Python 3.11
+tespy==0.6.3
+CoolProp==6.8.0
+fluprodia==2.2
+matplotlib==3.11.2
+numpy==1.26.4
+pandas==1.5.3
+scikit-learn==1.9.1
+scipy==1.17.1
