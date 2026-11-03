@@ -1,6 +1,6 @@
 # Overview
 
-This repository contains additional information and data relating to the publication “Impact of techno-economic and political boundary conditions on the integration of heat pumps into multivalent district heating systems” by authors M. Fritz, J. Freißmann, and I. Tuschy. It serves to enable the reproduction of the results achieved.
+This repository contains additional information and data relating to the publication “Impact of techno-economic boundary conditions on the integration of heat pumps into multivalent district heating systems” by authors M. Fritz, J. Freißmann, and I. Tuschy. It serves to enable the reproduction of the results achieved.
 
 # Description of contents
 
